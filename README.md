@@ -82,8 +82,8 @@ Check Interval: 60 seconds
 * TypeScript
 * Tailwind CSS
 * ShadCN UI
-* React Query
-* Axios
+* Redux Toolkit
+* RTK Query
 
 ### Backend
 
