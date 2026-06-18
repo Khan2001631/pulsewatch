@@ -9,6 +9,7 @@ A production-ready FastAPI backend framework built with SQLAlchemy 2.x, PostgreS
 - **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) (modern, fast, asynchronous ASGI framework)
 - **Database Engine & ORM**: [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (declarative base, connection pool tuning)
 - **Database Migrations**: [Alembic](https://alembic.sqlalchemy.org/) (handles schema updates)
+- **Security & Hashing**: [Passlib](https://passlib.readthedocs.io/) with `bcrypt` (password hashing) and [PyJWT](https://pyjwt.readthedocs.io/) (JSON Web Tokens)
 - **Structured Logging**: [Structlog](https://www.structlog.org/) (human-readable in development, JSON-serialized in production)
 - **Configuration Management**: [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) (typed environment variables loaded from `.env`)
 - **Testing**: [Pytest](https://docs.pytest.org/) (custom conftest fixture loading and client configuration)
@@ -167,3 +168,64 @@ logger.info("User logged in", user_id=123, ip_address="127.0.0.1")
   Verifies that the API server is up and responsive.
 - **Database Connectivity Check (`GET /db-check`)**:
   Performs a raw `SELECT 1` database query using the dependency-injected session to verify PostgreSQL connection pooling and health.
+
+---
+
+## 🔒 Authentication System (Tier 3 Security Architecture)
+
+PulseWatch uses a state-of-the-art **Tier 3 Authentication Architecture** built with security, robustness, and scalability in mind.
+
+### 🛡️ Security Features
+1. **HttpOnly Cookies**: Access and refresh tokens are stored exclusively in secure, browser-managed cookies (`HttpOnly`, `SameSite=Lax`, `Secure` in production). This completely mitigates Cross-Site Scripting (XSS) token-theft vulnerabilities.
+2. **Refresh Token Rotation (RTR)**: Every refresh request generates a new access token *and* a new refresh token. The previous refresh token is immediately marked as "rotated" and invalidated.
+3. **Replay & Hijack Protection**: If a previously used (rotated) refresh token is submitted, the system assumes token theft occurred and automatically revokes all sessions associated with that token family, forcing a full logout on all devices.
+4. **Stateful Session Management**: Each login maps to an active session in the database (`user_sessions` table) storing metadata (user agent, expiry, rotation index). This allows for instant session auditing and remote revocation.
+
+### 🔑 Authentication Endpoints
+
+All authentication endpoints are prefixed with `/api/v1`.
+
+#### 1. Register Account
+- **Endpoint**: `POST /api/v1/auth/register`
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "SecurePassword123"
+  }
+  ```
+- **Validation**:
+  - Valid email format.
+  - Password must be 8–128 characters, with at least one uppercase letter, one lowercase letter, and one number.
+- **Response** (`201 Created`): Returns user metadata (excluding password hashes and tokens).
+
+#### 2. Log In
+- **Endpoint**: `POST /api/v1/auth/login`
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "SecurePassword123"
+  }
+  ```
+- **Cookies Set**:
+  - `access_token` (Short-lived, e.g., 15 minutes)
+  - `refresh_token` (Long-lived, e.g., 7 days)
+- **Response** (`200 OK`): Confirmation message `{"message": "Login successful."}`.
+
+#### 3. Refresh Token Pair (Automatic Rotation)
+- **Endpoint**: `POST /api/v1/auth/refresh`
+- **Cookies Required**: `refresh_token`
+- **Cookies Set**: A new pair of rotated `access_token` and `refresh_token` cookies.
+- **Response** (`200 OK`): Confirmation message `{"message": "Token refreshed successfully."}`.
+
+#### 4. Get Current User Profile
+- **Endpoint**: `GET /api/v1/auth/me`
+- **Cookies Required**: `access_token`
+- **Response** (`200 OK`): User metadata payload for the authenticated session.
+
+#### 5. Log Out & Revoke Session
+- **Endpoint**: `POST /api/v1/auth/logout`
+- **Cookies Required**: `refresh_token` (to revoke session in DB)
+- **Cookies Cleared**: `access_token` and `refresh_token` are cleared immediately.
+- **Response** (`200 OK`): Confirmation message `{"message": "Logged out successfully."}`.
