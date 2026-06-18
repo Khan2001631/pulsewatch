@@ -9,7 +9,6 @@ It integrates with 'structlog' to provide:
 """
 
 import logging
-import sys
 import structlog
 from structlog.types import Processor
 

@@ -18,8 +18,13 @@ class Settings(BaseSettings):
     app_name: str = "PulseWatch"
     debug: bool = True
 
+    # JWT settings
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    # Access tokens are intentionally short-lived (15 min) to limit the exposure
+    # window if a token is somehow intercepted.
+    access_token_expire_minutes: int = 15
+    # Refresh tokens live much longer. Rotation means only the latest one is valid.
+    refresh_token_expire_days: int = 7
 
     database_url: str
     jwt_secret: str

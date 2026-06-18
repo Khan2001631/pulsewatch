@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.api.dependencies import get_db
 from app.core.logging import setup_logging, logger
+from app.api.routes.auth import router as auth_router
 
 # Initialize structured logging configurations as early as possible.
 setup_logging()
@@ -34,6 +36,27 @@ app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
 )
+
+
+# ---------------------------------------------------------------------------
+# CORS Middleware
+# ---------------------------------------------------------------------------
+# `allow_credentials=True` is required for the browser to send and receive
+# HttpOnly cookies on cross-origin requests (e.g., React on :3000 → API on :8000).
+# In production, replace the wildcard origin with your specific frontend domain.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React / Vite dev servers
+    allow_credentials=True,  # Must be True for cookie-based auth
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.get("/health")
