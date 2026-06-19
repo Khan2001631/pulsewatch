@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,8 @@ from app.api.dependencies import get_db
 from app.core.logging import setup_logging, logger
 from app.api.routes.auth import router as auth_router
 from app.api.routes.monitors import router as monitors_router
+from app.api.routes.health_checks import router as health_checks_router
+from app.tasks.monitor_scheduler import run_scheduler
 
 # Initialize structured logging configurations as early as possible.
 setup_logging()
@@ -19,6 +22,8 @@ async def lifespan(app: FastAPI):
     """
     FastAPI Lifespan event handler.
     Manages application startup and shutdown hooks, ensuring log hooks are captured.
+    Starts the monitor scheduler as a background asyncio task on startup and
+    cancels it gracefully on shutdown.
     """
     # Log application startup details in structured format
     logger.info(
@@ -26,10 +31,20 @@ async def lifespan(app: FastAPI):
         app_name=settings.app_name,
         debug_mode=settings.debug,
     )
+
+    # Start the background health-check scheduler.
+    scheduler_task = asyncio.create_task(run_scheduler(), name="monitor_scheduler")
+    logger.info("Monitor scheduler task created")
+
     try:
         yield
     finally:
-        # Log application shutdown details
+        # Cancel the scheduler and wait for it to finish cleanly.
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass  # Expected — scheduler exits its loop on CancelledError.
         logger.info("Application shutdown completed")
 
 
@@ -59,6 +74,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(monitors_router, prefix="/api/v1")
+app.include_router(health_checks_router, prefix="/api/v1")
 
 
 @app.get("/health")

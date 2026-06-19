@@ -1,19 +1,23 @@
 # PulseWatch Backend
 
-A production-ready FastAPI backend framework built with SQLAlchemy 2.x, PostgreSQL, Alembic migrations, Structlog structured logging, and Pytest testing setup.
+A production-ready FastAPI backend for **PulseWatch** — a website and API uptime monitoring service. The backend performs scheduled HTTP health checks against user-configured monitors and stores the results for retrieval via a REST API.
 
 ---
 
 ## 🛠️ Tech Stack & Key Libraries
 
-- **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) (modern, fast, asynchronous ASGI framework)
-- **Database Engine & ORM**: [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (declarative base, connection pool tuning)
-- **Database Migrations**: [Alembic](https://alembic.sqlalchemy.org/) (handles schema updates)
-- **Security & Hashing**: [Passlib](https://passlib.readthedocs.io/) with `bcrypt` (password hashing) and [PyJWT](https://pyjwt.readthedocs.io/) (JSON Web Tokens)
-- **Structured Logging**: [Structlog](https://www.structlog.org/) (human-readable in development, JSON-serialized in production)
-- **Configuration Management**: [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) (typed environment variables loaded from `.env`)
-- **Testing**: [Pytest](https://docs.pytest.org/) (custom conftest fixture loading and client configuration)
-- **Driver**: `psycopg2-binary` (PostgreSQL adapter)
+| Library | Role |
+|---|---|
+| [FastAPI](https://fastapi.tiangolo.com/) | ASGI web framework — routing, dependency injection, OpenAPI docs |
+| [SQLAlchemy 2.0](https://www.sqlalchemy.org/) | ORM and connection-pool management |
+| [Alembic](https://alembic.sqlalchemy.org/) | Schema migration tooling |
+| [httpx](https://www.python-httpx.org/) | Async HTTP client used by the health-check executor |
+| [Passlib](https://passlib.readthedocs.io/) + bcrypt | Secure password hashing |
+| [python-jose](https://python-jose.readthedocs.io/) | JSON Web Token signing and verification |
+| [Structlog](https://www.structlog.org/) | Structured logging (colorised dev / JSON production) |
+| [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | Typed environment-variable configuration |
+| [Pytest](https://docs.pytest.org/) | Test runner |
+| `psycopg2-binary` | PostgreSQL driver |
 
 ---
 
@@ -21,33 +25,49 @@ A production-ready FastAPI backend framework built with SQLAlchemy 2.x, PostgreS
 
 ```text
 backend/
-├── alembic/              # Database migration environment and script revisions
-├── app/                  # Application source code
-│   ├── api/              # API router and endpoints
-│   │   ├── dependencies.py # Shared dependencies (e.g., get_db)
-│   │   └── routes/       # API endpoints (versioned/feature-specific)
-│   ├── clients/          # External API clients
-│   ├── core/             # Core configurations
-│   │   ├── config.py     # Pydantic Settings base config
-│   │   ├── logging.py    # Structlog configurations (dev & prod handlers)
-│   │   └── security.py   # Security utilities (JWT, password hashing)
-│   ├── db/               # Database initialization and sessions
-│   │   ├── base.py       # DeclarativeBase for models
-│   │   └── session.py    # SQLAlchemy engine and sessionmakers
-│   ├── models/           # SQLAlchemy models
-│   ├── schemas/          # Pydantic schemas (validation/serialization)
-│   ├── services/         # Business logic layer
-│   ├── tasks/            # Background / worker tasks
-│   ├── utils/            # Helper utilities
-│   └── main.py           # Application entry point, lifespan, & base routers
-├── tests/                # Pytest test suite
-│   ├── conftest.py       # Common test fixtures (FastAPI TestClient)
-│   └── test_health.py    # Application health endpoints verification
-├── .env                  # Local configuration file (git-ignored)
-├── .env.example          # Template for environment variables
-├── alembic.ini           # Alembic configuration
-├── pytest.ini            # Pytest configuration
-└── requirements.txt      # Project dependencies
+├── alembic/                    # Alembic migration environment
+│   └── versions/               # Auto-generated migration scripts
+├── app/
+│   ├── api/
+│   │   ├── dependencies.py     # Shared FastAPI dependencies (get_db)
+│   │   └── routes/
+│   │       ├── auth.py         # /api/v1/auth/* endpoints
+│   │       ├── monitors.py     # /api/v1/monitors/* endpoints
+│   │       └── health_checks.py# /api/v1/monitors/{id}/health-checks, /api/v1/health-checks/{id}
+│   ├── core/
+│   │   ├── config.py           # Pydantic Settings — typed .env loading
+│   │   ├── logging.py          # Structlog setup (dev + prod)
+│   │   └── security.py         # JWT creation/verification, password hashing
+│   ├── db/
+│   │   ├── base.py             # SQLAlchemy DeclarativeBase
+│   │   └── session.py          # Engine + SessionLocal factory
+│   ├── models/
+│   │   ├── user.py             # User ORM model
+│   │   ├── user_session.py     # UserSession ORM model (refresh token tracking)
+│   │   ├── monitor.py          # Monitor ORM model
+│   │   └── health_check.py     # HealthCheck ORM model (NEW — Phase 2)
+│   ├── schemas/
+│   │   ├── auth.py             # Auth request/response schemas
+│   │   ├── user.py             # User response schema
+│   │   ├── monitor.py          # Monitor CRUD schemas
+│   │   └── health_check.py     # HealthCheckResponse schema (NEW — Phase 2)
+│   ├── services/
+│   │   ├── auth_service.py     # Auth business logic + get_current_user dependency
+│   │   ├── monitor_service.py  # Monitor CRUD business logic
+│   │   └── health_check_service.py # HTTP execution + DB query logic (NEW — Phase 2)
+│   ├── tasks/
+│   │   └── monitor_scheduler.py # asyncio background scheduler (NEW — Phase 2)
+│   ├── clients/                # External API clients (reserved)
+│   ├── utils/                  # Shared helper utilities (reserved)
+│   └── main.py                 # App entry point, lifespan, CORS, router registration
+├── tests/
+│   ├── conftest.py             # Pytest fixtures (FastAPI TestClient)
+│   └── test_health.py          # Health endpoint smoke tests
+├── .env                        # Local configuration (git-ignored)
+├── .env.example                # Configuration template
+├── alembic.ini                 # Alembic configuration
+├── pytest.ini                  # Pytest configuration
+└── requirements.txt            # Pinned dependencies
 ```
 
 ---
@@ -55,16 +75,16 @@ backend/
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
-- **Python**: version 3.13+ recommended
-- **PostgreSQL**: Local or remote instance installed and running
+- **Python** 3.13+
+- **PostgreSQL** running locally or remotely
 
 ### 2. Environment Configuration
-Create a `.env` file in the root of the `backend` directory based on the `.env.example` file:
+
+Copy the example file and fill in your values:
 ```bash
 cp .env.example .env
 ```
 
-Fill in your configuration settings in `.env`:
 ```ini
 APP_NAME="PulseWatch"
 DEBUG=True
@@ -74,158 +94,235 @@ JWT_ALGORITHM="HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-### 3. Local Setup & Installation
-1. Initialize the Python virtual environment:
-   ```bash
-   python -m venv venv
-   ```
-2. Activate the virtual environment:
-   - **Windows (PowerShell)**:
-     ```powershell
-     .\venv\Scripts\Activate.ps1
-     ```
-   - **macOS / Linux**:
-     ```bash
-     source venv/bin/activate
-     ```
-3. Install project dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 3. Local Setup
+
+```bash
+# Create and activate virtual environment
+python -m venv venv
+
+# Windows (PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 4. Apply Database Migrations
+
+```bash
+alembic upgrade head
+```
+
+### 5. Start the Development Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Redoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 
 ---
 
 ## 💾 Database Migrations (Alembic)
 
-Alembic is configured to read the `DATABASE_URL` dynamically from the Pydantic settings config (`app/core/config.py`).
+Alembic reads `DATABASE_URL` from `app/core/config.py` automatically.
 
-- **Check current database revision**:
-  ```bash
-  alembic current
-  ```
-- **Generate a new migration script**:
-  ```bash
-  alembic revision --autogenerate -m "description_of_changes"
-  ```
-- **Apply migrations to head**:
-  ```bash
-  alembic upgrade head
-  ```
-- **Downgrade migrations**:
-  ```bash
-  alembic downgrade -1
-  ```
-
----
-
-## 🏃 Running the Application
-
-Start the local development server with auto-reload:
 ```bash
-uvicorn app.main:app --reload
+# Check current revision
+alembic current
+
+# Generate a new migration from model changes
+alembic revision --autogenerate -m "description_of_changes"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Roll back the last migration
+alembic downgrade -1
 ```
-Once started, you can access:
-- **Interactive Swagger Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **Alternative Redoc Docs**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 
 ---
 
 ## 🧪 Testing
 
-The backend uses Pytest with custom configuration in `pytest.ini` and a custom FastAPI TestClient fixture defined in `tests/conftest.py`.
+```bash
+# Run all tests
+pytest
 
-- **Run all tests**:
-  ```bash
-  pytest
-  ```
-- **Run tests in verbose mode**:
-  ```bash
-  pytest -v
-  ```
-
----
-
-## 📢 Logging Setup
-
-Logging is powered by `structlog` and initializes dynamically in `app/main.py`'s entry point.
-- **Development Logging (`DEBUG=True`)**:
-  Pretty-printed, colorized terminal console logs.
-- **Production Logging (`DEBUG=False`)**:
-  JSON-serialized structured logs suitable for centralized logs aggregates (e.g., Datadog, ELK stack).
-
-Example usage in your code:
-```python
-from app.core.logging import logger
-
-logger.info("User logged in", user_id=123, ip_address="127.0.0.1")
+# Verbose output
+pytest -v
 ```
 
 ---
 
-## 🔌 API Core Endpoints
+## 📢 Logging
 
-- **Health Check (`GET /health`)**:
-  Verifies that the API server is up and responsive.
-- **Database Connectivity Check (`GET /db-check`)**:
-  Performs a raw `SELECT 1` database query using the dependency-injected session to verify PostgreSQL connection pooling and health.
+Structured logging via `structlog`. Initialised once at startup in `main.py`.
+
+| Environment | Output |
+|---|---|
+| `DEBUG=True` | Colourised, human-readable console output |
+| `DEBUG=False` | Single-line JSON records (suitable for Datadog, ELK, etc.) |
+
+```python
+from app.core.logging import logger
+
+logger.info("Health check executed", monitor_id=42, status="SUCCESS", response_time_ms=120)
+```
 
 ---
 
-## 🔒 Authentication System (Tier 3 Security Architecture)
+## 🔌 System Endpoints
 
-PulseWatch uses a state-of-the-art **Tier 3 Authentication Architecture** built with security, robustness, and scalability in mind.
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Confirms the API server is running |
+| `GET` | `/db-check` | Runs `SELECT 1` to confirm DB connectivity |
 
-### 🛡️ Security Features
-1. **HttpOnly Cookies**: Access and refresh tokens are stored exclusively in secure, browser-managed cookies (`HttpOnly`, `SameSite=Lax`, `Secure` in production). This completely mitigates Cross-Site Scripting (XSS) token-theft vulnerabilities.
-2. **Refresh Token Rotation (RTR)**: Every refresh request generates a new access token *and* a new refresh token. The previous refresh token is immediately marked as "rotated" and invalidated.
-3. **Replay & Hijack Protection**: If a previously used (rotated) refresh token is submitted, the system assumes token theft occurred and automatically revokes all sessions associated with that token family, forcing a full logout on all devices.
-4. **Stateful Session Management**: Each login maps to an active session in the database (`user_sessions` table) storing metadata (user agent, expiry, rotation index). This allows for instant session auditing and remote revocation.
+---
 
-### 🔑 Authentication Endpoints
+## 🔒 Authentication System
 
-All authentication endpoints are prefixed with `/api/v1`.
+PulseWatch uses a **Tier 3 stateful authentication architecture** with HttpOnly cookies and refresh-token rotation.
 
-#### 1. Register Account
-- **Endpoint**: `POST /api/v1/auth/register`
-- **Request Body**:
-  ```json
-  {
-    "email": "user@example.com",
-    "password": "SecurePassword123"
-  }
-  ```
-- **Validation**:
-  - Valid email format.
-  - Password must be 8–128 characters, with at least one uppercase letter, one lowercase letter, and one number.
-- **Response** (`201 Created`): Returns user metadata (excluding password hashes and tokens).
+### Security Features
 
-#### 2. Log In
-- **Endpoint**: `POST /api/v1/auth/login`
-- **Request Body**:
-  ```json
-  {
-    "email": "user@example.com",
-    "password": "SecurePassword123"
-  }
-  ```
-- **Cookies Set**:
-  - `access_token` (Short-lived, e.g., 15 minutes)
-  - `refresh_token` (Long-lived, e.g., 7 days)
-- **Response** (`200 OK`): Confirmation message `{"message": "Login successful."}`.
+1. **HttpOnly Cookies** — Tokens are never exposed to JavaScript, eliminating XSS token theft.
+2. **Refresh Token Rotation (RTR)** — Every `/refresh` call issues a brand-new token pair and invalidates the old one.
+3. **Replay & Hijack Protection** — Submitting an already-rotated token revokes *all* sessions in that family, forcing a full logout.
+4. **Stateful Sessions** — Each login creates a row in `user_sessions` for real-time auditing and remote revocation.
 
-#### 3. Refresh Token Pair (Automatic Rotation)
-- **Endpoint**: `POST /api/v1/auth/refresh`
-- **Cookies Required**: `refresh_token`
-- **Cookies Set**: A new pair of rotated `access_token` and `refresh_token` cookies.
-- **Response** (`200 OK`): Confirmation message `{"message": "Token refreshed successfully."}`.
+### Authentication Endpoints
 
-#### 4. Get Current User Profile
-- **Endpoint**: `GET /api/v1/auth/me`
-- **Cookies Required**: `access_token`
-- **Response** (`200 OK`): User metadata payload for the authenticated session.
+All endpoints are prefixed `/api/v1`.
 
-#### 5. Log Out & Revoke Session
-- **Endpoint**: `POST /api/v1/auth/logout`
-- **Cookies Required**: `refresh_token` (to revoke session in DB)
-- **Cookies Cleared**: `access_token` and `refresh_token` are cleared immediately.
-- **Response** (`200 OK`): Confirmation message `{"message": "Logged out successfully."}`.
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/auth/register` | Create a new account |
+| `POST` | `/auth/login` | Log in; sets `access_token` + `refresh_token` cookies |
+| `POST` | `/auth/refresh` | Rotate token pair silently |
+| `GET` | `/auth/me` | Return the current user's profile |
+| `POST` | `/auth/logout` | Revoke session and clear cookies |
+
+**Register / Login request body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "SecurePassword123"
+}
+```
+
+**Password rules:** 8–128 characters, at least one uppercase letter, one lowercase letter, and one number.
+
+---
+
+## 📡 Monitor Endpoints
+
+Monitors define what to check, how often, and what a healthy response looks like.
+
+All endpoints are prefixed `/api/v1` and require an authenticated session cookie.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/monitors` | Create a new monitor |
+| `GET` | `/monitors` | List all monitors owned by the current user |
+| `GET` | `/monitors/{id}` | Get a single monitor |
+| `PUT` | `/monitors/{id}` | Update a monitor (partial updates supported) |
+| `DELETE` | `/monitors/{id}` | Delete a monitor permanently |
+
+**Create / Update fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | required | Human-readable label (max 100 chars) |
+| `url` | URL | required | Full HTTP/HTTPS URL to monitor |
+| `method` | enum | `GET` | HTTP method (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) |
+| `expected_status_code` | int | `200` | Status code that indicates a healthy response (100–599) |
+| `check_interval_seconds` | int | `60` | How often to check, in seconds (must be > 0) |
+| `is_active` | bool | `true` | Set to `false` to pause without deleting |
+
+---
+
+## 🩺 Health Check Engine (Phase 2)
+
+### How It Works
+
+On application startup, a background `asyncio` task (`monitor_scheduler.py`) wakes every **10 seconds** and evaluates all active monitors. If a monitor's `check_interval_seconds` has elapsed since its last check, a new health check task is spawned concurrently.
+
+Each check:
+1. Sends the configured HTTP request with a **10-second timeout**.
+2. Measures round-trip response time in milliseconds.
+3. Compares the returned status code against `expected_status_code`.
+4. Writes a `HealthCheck` record to the database with status `SUCCESS` or `FAILURE`.
+
+| Scenario | Status | status_code | response_time_ms | error_message |
+|---|---|---|---|---|
+| Response matches expected code | `SUCCESS` | actual code | measured | `null` |
+| Response does not match expected code | `FAILURE` | actual code | measured | `null` |
+| Request times out (> 10s) | `FAILURE` | `null` | measured up to cutoff | `"Request timed out after 10s"` |
+| DNS / connection error | `FAILURE` | `null` | `null` | exception message |
+
+### Scheduler Behaviour
+
+- Runs entirely inside the FastAPI process — no Redis, Celery, or extra infrastructure needed.
+- Tracks `last_checked_at` in an in-memory dictionary per monitor. On restart, all monitors are treated as immediately due.
+- Concurrent checks are isolated: a slow monitor never blocks a fast one.
+- On application shutdown, the scheduler task is cancelled gracefully.
+
+### Health Check Endpoints
+
+All endpoints require an authenticated session cookie. Ownership is always enforced — users can only see health checks for their own monitors.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/monitors/{id}/health-checks` | Latest 50 health checks for a monitor (newest first) |
+| `GET` | `/health-checks/{id}` | Retrieve a single health check record by ID |
+
+**`HealthCheckResponse` fields:**
+
+| Field | Type | Nullable | Description |
+|---|---|---|---|
+| `id` | int | no | Unique record identifier |
+| `monitor_id` | int | no | Parent monitor ID |
+| `status` | `SUCCESS` \| `FAILURE` | no | Outcome of the check |
+| `status_code` | int | yes | HTTP status code from the server |
+| `response_time_ms` | int | yes | Round-trip time in milliseconds |
+| `error_message` | string | yes | Failure reason for non-HTTP errors |
+| `checked_at` | datetime (UTC) | no | When the check was executed |
+
+---
+
+## 🗺️ Architecture Overview
+
+```text
+HTTP Request
+    │
+    ▼
+FastAPI Route          (app/api/routes/)
+    │   validates input, resolves auth dependency
+    ▼
+Service Layer          (app/services/)
+    │   owns all business logic and ownership enforcement
+    ▼
+SQLAlchemy ORM         (app/models/)
+    │   maps Python objects ↔ PostgreSQL rows
+    ▼
+PostgreSQL Database
+
+────────────────────────────────────────────────
+
+Background Scheduler   (app/tasks/monitor_scheduler.py)
+    │   asyncio loop — wakes every 10 s
+    ▼
+Health Check Service   (app/services/health_check_service.py)
+    │   httpx async request, 10s timeout
+    ▼
+HealthCheck Model      (app/models/health_check.py)
+    │   persists result
+    ▼
+PostgreSQL Database
+```

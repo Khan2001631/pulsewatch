@@ -10,7 +10,8 @@ import {
 } from "@/services/monitorsApi";
 import { MonitorForm } from "@/components/monitors/MonitorForm";
 import { DeleteConfirmModal } from "@/components/monitors/DeleteConfirmModal";
-import type { Monitor, HTTPMethod } from "@/types/monitor";
+import { MonitorRow } from "@/components/monitors/MonitorRow";
+import type { Monitor } from "@/types/monitor";
 
 const colorMap: Record<string, { bg: string; text: string; border: string; glow: string }> = {
   blue:    { bg: "rgba(59,130,246,0.1)", text: "#60a5fa", border: "rgba(59,130,246,0.2)", glow: "rgba(59,130,246,0.15)" },
@@ -429,61 +430,16 @@ export function HomePage() {
                   </div>
                 ) : (
                   <div className="divide-y divide-white/4">
-                    {monitors.map((ep) => {
-                      const statusKey = ep.is_active ? "active" : "paused";
-                      const s = statusConfig[statusKey];
-                      return (
-                        <div
-                          key={ep.id}
-                          className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-pointer"
-                          onClick={() => handleOpenEdit(ep)}
-                        >
-                          {/* Status dot */}
-                          <div className="flex-shrink-0">
-                            <div
-                              className="w-2.5 h-2.5 rounded-full"
-                              style={{
-                                background: s.dot,
-                                boxShadow: `0 0 6px ${s.dot}`,
-                                animation: ep.is_active ? "pulse-glow 2s ease-in-out infinite" : "none",
-                              }}
-                            />
-                          </div>
-
-                          {/* Name & URL */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold bg-white/5 text-slate-400 px-1.5 py-0.5 rounded border border-white/5">
-                                {ep.method}
-                              </span>
-                              <p className="text-sm font-medium text-slate-200 truncate">{ep.name}</p>
-                            </div>
-                            <p className="text-xs text-slate-600 truncate mt-0.5">{ep.url}</p>
-                          </div>
-
-                          {/* Check interval */}
-                          <div className="hidden md:flex flex-col items-end gap-1 w-24 text-right">
-                            <span className="text-xs font-medium text-slate-300">{ep.check_interval_seconds}s</span>
-                            <span className="text-[10px] text-slate-600">Interval</span>
-                          </div>
-
-                          {/* Expected Status Code */}
-                          <div className="hidden sm:block w-20 text-right">
-                            <span className="text-xs font-medium text-emerald-400">
-                              exp: {ep.expected_status_code}
-                            </span>
-                          </div>
-
-                          {/* Status badge */}
-                          <div
-                            className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border"
-                            style={{ background: s.badge, color: s.badgeText, borderColor: s.badgeBorder }}
-                          >
-                            {s.label}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {monitors.map((ep) => (
+                      <MonitorRow
+                        key={ep.id}
+                        monitor={ep}
+                        variant="card-row"
+                        onEdit={handleOpenEdit}
+                        onDelete={handleOpenDelete}
+                        onToggleActive={handleToggleActive}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -531,68 +487,25 @@ export function HomePage() {
                       <tr className="border-b border-white/5 text-xs font-semibold text-slate-500 bg-[#080d18]/20">
                         <th className="py-3 px-5">Name & URL</th>
                         <th className="py-3 px-4">Method</th>
-                        <th className="py-3 px-4 text-center">Expected Status</th>
-                        <th className="py-3 px-4 text-center">Check Interval</th>
-                        <th className="py-3 px-4 text-center">Status</th>
+                        <th className="py-3 px-4 text-center">Expected</th>
+                        <th className="py-3 px-4 text-center">Interval</th>
+                        <th className="py-3 px-4 text-center">Health</th>
+                        <th className="py-3 px-4 text-center">Response</th>
+                        <th className="py-3 px-4 text-center">Last Check</th>
+                        <th className="py-3 px-4 text-center">Schedule</th>
                         <th className="py-3 px-5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5 text-sm text-slate-300">
                       {monitors.map((monitor) => (
-                        <tr key={monitor.id} className="hover:bg-white/2 transition-colors">
-                          <td className="py-3.5 px-5 max-w-xs sm:max-w-md">
-                            <div className="font-semibold text-slate-200 truncate">{monitor.name}</div>
-                            <div className="text-xs text-slate-600 truncate mt-0.5">{monitor.url}</div>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="inline-block text-xs font-bold font-mono px-2 py-0.5 rounded bg-white/5 border border-white/5 text-slate-400">
-                              {monitor.method}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            <span className="font-mono text-emerald-400 font-semibold">{monitor.expected_status_code}</span>
-                          </td>
-                          <td className="py-3.5 px-4 text-center font-mono">
-                            {monitor.check_interval_seconds}s
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            <button
-                              onClick={() => handleToggleActive(monitor)}
-                              className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
-                                monitor.is_active
-                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20"
-                                  : "bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20"
-                              }`}
-                              title={monitor.is_active ? "Click to pause monitoring" : "Click to resume monitoring"}
-                            >
-                              {monitor.is_active ? "Active" : "Paused"}
-                            </button>
-                          </td>
-                          <td className="py-3.5 px-5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleOpenEdit(monitor)}
-                                className="p-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                                title="Edit Monitor"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleOpenDelete(monitor)}
-                                className="p-1.5 rounded bg-red-500/5 hover:bg-red-500/15 text-red-500 hover:text-red-400 transition-colors"
-                                title="Delete Monitor"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                        <MonitorRow
+                          key={monitor.id}
+                          monitor={monitor}
+                          variant="table"
+                          onEdit={handleOpenEdit}
+                          onDelete={handleOpenDelete}
+                          onToggleActive={handleToggleActive}
+                        />
                       ))}
                     </tbody>
                   </table>

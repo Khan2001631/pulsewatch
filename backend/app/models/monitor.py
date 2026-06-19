@@ -120,6 +120,14 @@ class Monitor(Base):
     # Back-reference to the owning user for convenient access (e.g. monitor.user.email).
     user: Mapped["User"] = relationship("User", back_populates="monitors")  # noqa: F821
 
+    # One-to-many: all health check results recorded for this monitor.
+    health_checks: Mapped[list["HealthCheck"]] = relationship(  # noqa: F821
+        "HealthCheck",
+        back_populates="monitor",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     def __repr__(self) -> str:
         return (
             f"<Monitor id={self.id} name={self.name!r} "
