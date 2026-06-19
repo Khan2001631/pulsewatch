@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.api.dependencies import get_db
 from app.core.logging import setup_logging, logger
 from app.api.routes.auth import router as auth_router
+from app.api.routes.monitors import router as monitors_router
 
 # Initialize structured logging configurations as early as possible.
 setup_logging()
@@ -57,6 +58,7 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(monitors_router, prefix="/api/v1")
 
 
 @app.get("/health")

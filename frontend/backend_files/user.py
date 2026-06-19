@@ -30,8 +30,6 @@ class User(Base):
         updated_at:    UTC timestamp updated automatically on every row change.
         sessions:      Relationship to UserSession — allows `user.sessions`
                        to enumerate all login sessions for this account.
-        monitors:      Relationship to Monitor — allows `user.monitors`
-                       to enumerate all monitors owned by this account.
     """
 
     __tablename__ = "users"
@@ -63,12 +61,6 @@ class User(Base):
     # cascade="all, delete-orphan" means sessions are deleted when the user is deleted.
     sessions: Mapped[list["UserSession"]] = relationship(  # noqa: F821
         "UserSession", back_populates="user", cascade="all, delete-orphan"
-    )
-
-    # One user can have many monitors.
-    # cascade="all, delete-orphan" means monitors are deleted when the user is deleted.
-    monitors: Mapped[list["Monitor"]] = relationship(  # noqa: F821
-        "Monitor", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
