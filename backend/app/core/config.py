@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     database_url: str
     jwt_secret: str
 
-
+    # Resend Email Settings
+    resend_api_key: str = ""  # Default empty string so it doesn't fail immediately in tests without it
+    # URL of the frontend app, used to construct reset links
+    frontend_url: str = "http://localhost:5173"
 
 # Singleton settings instance
 settings = Settings()

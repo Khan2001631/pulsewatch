@@ -6,6 +6,6 @@ export const api = createApi({
     baseUrl: "/api", // Proxied by Vite to backend
     credentials: "include", // Essential for HttpOnly cookies
   }),
-  tagTypes: ["User", "Monitor", "HealthCheck"],
+  tagTypes: ["User", "Monitor", "HealthCheck", "Incident", "Dashboard"],
   endpoints: () => ({}),
 });

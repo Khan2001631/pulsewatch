@@ -17,8 +17,10 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.models.user import User
 from app.schemas.monitor import MonitorCreate, MonitorResponse, MonitorUpdate
+from app.schemas.incident import IncidentResponse
 from app.services.auth_service import get_current_user
 from app.services import monitor_service
+from app.services import incident_service
 
 router = APIRouter(prefix="/monitors", tags=["Monitors"])
 
@@ -189,3 +191,38 @@ def delete_monitor(
         monitor_id=monitor_id,
         user_id=current_user.id,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /monitors/{monitor_id}/incidents
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{monitor_id}/incidents",
+    response_model=list[IncidentResponse],
+    summary="List all incidents for a specific monitor",
+    description=(
+        "Returns all incidents for the specified monitor, ordered by start time "
+        "descending (newest first). "
+        "Only the owning user may access this data. "
+        "Returns HTTP 404 if the monitor does not exist or belongs to another user."
+    ),
+)
+def list_monitor_incidents(
+    monitor_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[IncidentResponse]:
+    """
+    Retrieve all incidents for the given monitor.
+
+    On success: returns a list of incidents (may be empty).
+    On not found or wrong owner: returns HTTP 404.
+    On missing/invalid auth token: returns HTTP 401.
+    """
+    incidents = incident_service.get_monitor_incidents(
+        db=db,
+        monitor_id=monitor_id,
+        user_id=current_user.id,
+    )
+    return [IncidentResponse.model_validate(i) for i in incidents]

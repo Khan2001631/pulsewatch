@@ -6,12 +6,40 @@ Separating these from the general user schemas keeps each file focused
 on a single responsibility.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.schemas.user import _validate_password_strength
 
 
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for the forgot password request."""
+    email: EmailStr = Field(
+        ...,
+        description="Registered user email address.",
+        examples=["user@example.com"],
+    )
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for the reset password request."""
+    token: str = Field(
+        ...,
+        description="The secure reset token received via email.",
+    )
+    new_password: Annotated[str, Field(min_length=8, max_length=128)] = Field(
+        ...,
+        description="New password (8–128 chars, must include upper, lower, and digit).",
+        examples=["Secure123"],
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return _validate_password_strength(value)
 
 class LoginRequest(BaseModel):
     """

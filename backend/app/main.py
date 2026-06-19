@@ -11,6 +11,8 @@ from app.core.logging import setup_logging, logger
 from app.api.routes.auth import router as auth_router
 from app.api.routes.monitors import router as monitors_router
 from app.api.routes.health_checks import router as health_checks_router
+from app.api.routes.incidents import router as incidents_router
+from app.api.routes.dashboard import router as dashboard_router
 from app.tasks.monitor_scheduler import run_scheduler
 
 # Initialize structured logging configurations as early as possible.
@@ -75,6 +77,8 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(monitors_router, prefix="/api/v1")
 app.include_router(health_checks_router, prefix="/api/v1")
+app.include_router(incidents_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
 
 
 @app.get("/health")

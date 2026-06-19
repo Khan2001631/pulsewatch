@@ -32,6 +32,7 @@ from app.core.logging import logger
 from app.db.session import SessionLocal
 from app.models.health_check import CheckStatus, HealthCheck
 from app.models.monitor import Monitor
+from app.services import incident_service
 
 # Timeout in seconds applied to every outbound health-check HTTP request.
 # Requests that exceed this limit are recorded as FAILURE.
@@ -172,6 +173,13 @@ async def execute_health_check(monitor_id: int) -> None:
             health_check_id=health_check.id,
             monitor_id=monitor.id,
         )
+
+        # ------------------------------------------------------------------
+        # 5. Evaluate incident rules
+        # ------------------------------------------------------------------
+        # Called after commit so the new HealthCheck row is visible to the
+        # incident query. evaluate_incidents handles its own commit internally.
+        incident_service.evaluate_incidents(db=db, monitor_id=monitor.id)
 
     except Exception:
         # Safety net: log unexpected errors without crashing the scheduler.

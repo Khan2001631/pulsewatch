@@ -20,7 +20,12 @@ from app.core.security import (
     set_auth_cookies,
 )
 from app.models.user import User
-from app.schemas.auth import LoginRequest, MessageResponse
+from app.schemas.auth import (
+    LoginRequest,
+    MessageResponse,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+)
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import (
     get_current_user,
@@ -28,6 +33,8 @@ from app.services.auth_service import (
     logout_user,
     refresh_tokens,
     register_user,
+    forgot_password,
+    reset_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -198,3 +205,53 @@ def me(
     On missing/invalid access token: returns HTTP 401 (from dependency).
     """
     return UserResponse.model_validate(current_user)
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/forgot-password
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Request a password reset email",
+    description=(
+        "Send a password reset link to the user's email if the account exists. "
+        "Always returns the same success message to prevent user enumeration attacks."
+    ),
+)
+def handle_forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """
+    Initiate the password reset flow.
+    """
+    forgot_password(payload=payload, db=db)
+    return MessageResponse(
+        message="If an account exists for this email, password reset instructions have been sent."
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/reset-password
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    summary="Reset a forgotten password",
+    description=(
+        "Validates the secure token and updates the user's password. "
+        "Upon success, automatically revokes all active sessions for security."
+    ),
+)
+def handle_reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """
+    Complete the password reset flow.
+    """
+    reset_password(payload=payload, db=db)
+    return MessageResponse(message="Password has been reset successfully. Please log in with your new password.")

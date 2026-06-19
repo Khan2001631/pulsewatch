@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { IncidentsPage } from "@/pages/dashboard/IncidentsPage";
+import { IncidentDetailsPage } from "@/pages/dashboard/IncidentDetailsPage";
 
 const Login = () => <div>Login Page</div>;
 const Dashboard = () => <div>Dashboard</div>;
 const Monitors = () => <div>Monitors</div>;
-const Incidents = () => <div>Incidents</div>;
 
 export default function AppRouter() {
   return (
@@ -19,7 +20,8 @@ export default function AppRouter() {
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/monitors" element={<Monitors />} />
-            <Route path="/incidents" element={<Incidents />} />
+            <Route path="/incidents" element={<IncidentsPage />} />
+            <Route path="/incidents/:id" element={<IncidentDetailsPage />} />
           </Route>
         </Route>
 

@@ -128,6 +128,14 @@ class Monitor(Base):
         passive_deletes=True,
     )
 
+    # One-to-many: all incidents raised for this monitor.
+    incidents: Mapped[list["Incident"]] = relationship(  # noqa: F821
+        "Incident",
+        back_populates="monitor",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     def __repr__(self) -> str:
         return (
             f"<Monitor id={self.id} name={self.name!r} "

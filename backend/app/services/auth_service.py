@@ -35,8 +35,12 @@ from app.core.security import (
 from app.core.config import settings
 from app.models.user import User
 from app.models.user_session import UserSession, SessionStatus
+from app.models.password_reset_token import PasswordResetToken
 from app.schemas.user import UserCreate
-from app.schemas.auth import LoginRequest
+from app.schemas.auth import LoginRequest, ForgotPasswordRequest, ResetPasswordRequest
+from app.services.email_service import EmailService
+import secrets
+import hashlib
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +66,11 @@ def register_user(payload: UserCreate, db: Session) -> User:
     Raises:
         HTTPException 409: If the email is already registered.
     """
-    existing = db.query(User).filter(User.email == payload.email).first()
+    # Normalize email: always store and compare in lowercase to avoid
+    # duplicate accounts and case-mismatch lookups (e.g. Khan@ vs khan@).
+    normalized_email = payload.email.lower().strip()
+
+    existing = db.query(User).filter(User.email == normalized_email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -70,7 +78,7 @@ def register_user(payload: UserCreate, db: Session) -> User:
         )
 
     new_user = User(
-        email=payload.email,
+        email=normalized_email,
         password_hash=hash_password(payload.password),
         is_active=True,
     )
@@ -112,7 +120,7 @@ def login_user(payload: LoginRequest, db: Session) -> tuple[User, str, str]:
         detail="Invalid email or password.",
     )
 
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
 
     # Use the same error for "not found" and "wrong password" to prevent
     # user enumeration attacks (attacker cannot distinguish which failed).
@@ -323,3 +331,95 @@ def get_current_user(
         raise _CREDENTIALS_EXCEPTION
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# Forgot & Reset Password
+# ---------------------------------------------------------------------------
+
+def forgot_password(payload: ForgotPasswordRequest, db: Session) -> None:
+    """
+    Handle a forgot password request.
+    
+    Generates a secure token, stores its hash, and sends an email.
+    Always succeeds silently if the user is not found to prevent enumeration.
+    """
+    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
+    if not user or not user.is_active:
+        # Silently return to prevent user enumeration attacks
+        return
+
+    # Generate a secure 32-byte URL-safe token
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    # Expire in 1 hour
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(reset_token)
+    db.commit()
+
+    reset_link = f"{settings.frontend_url}/reset-password?token={raw_token}"
+    EmailService.send_password_reset_email(to_email=user.email, reset_link=reset_link)
+
+
+def reset_password(payload: ResetPasswordRequest, db: Session) -> None:
+    """
+    Handle a reset password request.
+    
+    Verifies the token, updates the user's password, marks the token as used,
+    and revokes all active sessions for the user.
+    """
+    token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+
+    # Find the token
+    reset_token = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == token_hash)
+        .first()
+    )
+
+    if not reset_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token.",
+        )
+
+    if reset_token.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password reset token has already been used.",
+        )
+
+    now = datetime.now(timezone.utc)
+    if reset_token.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password reset token has expired.",
+        )
+
+    # Token is valid. Update password.
+    user = reset_token.user
+    user.password_hash = hash_password(payload.new_password)
+
+    # Mark token as used
+    reset_token.used_at = now
+
+    # Revoke all active sessions for the user
+    sessions = (
+        db.query(UserSession)
+        .filter(
+            UserSession.user_id == user.id,
+            UserSession.status == SessionStatus.ACTIVE,
+        )
+        .all()
+    )
+    for session in sessions:
+        session.status = SessionStatus.REVOKED
+
+    db.commit()

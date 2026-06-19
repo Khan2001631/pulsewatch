@@ -71,5 +71,10 @@ class User(Base):
         "Monitor", back_populates="user", cascade="all, delete-orphan"
     )
 
+    # One user can have many password reset tokens.
+    password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(  # noqa: F821
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email!r} active={self.is_active}>"

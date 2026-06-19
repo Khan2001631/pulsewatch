@@ -9,7 +9,7 @@ interface Props {
   onEdit: (monitor: Monitor) => void;
   onDelete: (monitor: Monitor) => void;
   onToggleActive: (monitor: Monitor) => void;
-  /** Layout mode — the monitor list view uses "table", overview uses "card-row" */
+  /** Layout mode — the monitor list view uses "table", dashboard uses "card-row" */
   variant?: "table" | "card-row";
 }
 
@@ -160,7 +160,7 @@ export function MonitorRow({ monitor, onEdit, onDelete, onToggleActive, variant 
   );
 
   if (variant === "card-row") {
-    // Used by the Overview tab — compact horizontal card-row layout
+    // Used by the Dashboard tab — compact horizontal card-row layout
     const isActiveDot = !hasFailed && monitor.is_active;
     return (
       <>

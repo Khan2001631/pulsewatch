@@ -18,6 +18,7 @@ A production-ready FastAPI backend for **PulseWatch** — a website and API upti
 | [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | Typed environment-variable configuration |
 | [Pytest](https://docs.pytest.org/) | Test runner |
 | `psycopg2-binary` | PostgreSQL driver |
+| [Resend SDK](https://resend.com/) | Email dispatch client for password recovery & system notifications |
 
 ---
 
@@ -32,8 +33,10 @@ backend/
 │   │   ├── dependencies.py     # Shared FastAPI dependencies (get_db)
 │   │   └── routes/
 │   │       ├── auth.py         # /api/v1/auth/* endpoints
-│   │       ├── monitors.py     # /api/v1/monitors/* endpoints
-│   │       └── health_checks.py# /api/v1/monitors/{id}/health-checks, /api/v1/health-checks/{id}
+│   │   ├── monitors.py     # /api/v1/monitors/* endpoints
+│   │       ├── health_checks.py# /api/v1/monitors/{id}/health-checks, /api/v1/health-checks/{id}
+│   │       ├── incidents.py    # /api/v1/incidents/* endpoints (NEW — Phase 3)
+│   │       └── dashboard.py    # /api/v1/dashboard/* endpoints (NEW — Phase 4)
 │   ├── core/
 │   │   ├── config.py           # Pydantic Settings — typed .env loading
 │   │   ├── logging.py          # Structlog setup (dev + prod)
@@ -45,16 +48,23 @@ backend/
 │   │   ├── user.py             # User ORM model
 │   │   ├── user_session.py     # UserSession ORM model (refresh token tracking)
 │   │   ├── monitor.py          # Monitor ORM model
-│   │   └── health_check.py     # HealthCheck ORM model (NEW — Phase 2)
+│   │   ├── health_check.py     # HealthCheck ORM model (NEW — Phase 2)
+│   │   ├── incident.py         # Incident ORM model (NEW — Phase 3)
+│   │   └── password_reset_token.py # PasswordResetToken ORM model (hashed reset tokens)
 │   ├── schemas/
 │   │   ├── auth.py             # Auth request/response schemas
 │   │   ├── user.py             # User response schema
 │   │   ├── monitor.py          # Monitor CRUD schemas
-│   │   └── health_check.py     # HealthCheckResponse schema (NEW — Phase 2)
+│   │   ├── health_check.py     # HealthCheckResponse schema (NEW — Phase 2)
+│   │   ├── incident.py         # IncidentResponse schema (NEW — Phase 3)
+│   │   └── dashboard.py        # Dashboard metrics response schemas (NEW — Phase 4)
 │   ├── services/
 │   │   ├── auth_service.py     # Auth business logic + get_current_user dependency
 │   │   ├── monitor_service.py  # Monitor CRUD business logic
-│   │   └── health_check_service.py # HTTP execution + DB query logic (NEW — Phase 2)
+│   │   ├── email_service.py    # Centralized Resend integration for sending emails
+│   │   ├── health_check_service.py # HTTP execution + DB query logic (NEW — Phase 2)
+│   │   ├── incident_service.py # Incident lifecycle management (NEW — Phase 3)
+│   │   └── dashboard_service.py # Analytics calculation logic (NEW — Phase 4)
 │   ├── tasks/
 │   │   └── monitor_scheduler.py # asyncio background scheduler (NEW — Phase 2)
 │   ├── clients/                # External API clients (reserved)
@@ -92,6 +102,8 @@ DATABASE_URL="postgresql://<username>:<password>@localhost:5432/pulsewatch"
 JWT_SECRET="generate-a-secure-random-secret-here"
 JWT_ALGORITHM="HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+RESEND_API_KEY="re_your_api_key_here"
+FRONTEND_URL="http://localhost:5173"
 ```
 
 ### 3. Local Setup
@@ -195,6 +207,8 @@ PulseWatch uses a **Tier 3 stateful authentication architecture** with HttpOnly 
 2. **Refresh Token Rotation (RTR)** — Every `/refresh` call issues a brand-new token pair and invalidates the old one.
 3. **Replay & Hijack Protection** — Submitting an already-rotated token revokes *all* sessions in that family, forcing a full logout.
 4. **Stateful Sessions** — Each login creates a row in `user_sessions` for real-time auditing and remote revocation.
+5. **Secure Password Recovery** — Forgotten passwords can be reset via email using single-use, cryptographically secure, time-bound (1-hour) tokens.
+6. **Compromise Mitigation** — Resetting a password immediately revokes all existing active user sessions, forcing all client applications to log back in.
 
 ### Authentication Endpoints
 
@@ -207,6 +221,8 @@ All endpoints are prefixed `/api/v1`.
 | `POST` | `/auth/refresh` | Rotate token pair silently |
 | `GET` | `/auth/me` | Return the current user's profile |
 | `POST` | `/auth/logout` | Revoke session and clear cookies |
+| `POST` | `/auth/forgot-password` | Generate reset token and email password reset link |
+| `POST` | `/auth/reset-password` | Reset password using token, revoking all active user sessions |
 
 **Register / Login request body:**
 ```json
@@ -296,6 +312,84 @@ All endpoints require an authenticated session cookie. Ownership is always enfor
 
 ---
 
+## 🚨 Incident Management (Phase 3)
+
+### How It Works
+
+PulseWatch automatically detects service outages and transitions them into tracked incidents. The incident lifecycle is governed by the following rules:
+
+1. **Incident Creation**:
+   - An incident is automatically created (`OPEN`) when a monitor registers **3 consecutive failures** (`CheckStatus.FAILURE`).
+   - The incident's `started_at` is set to the timestamp of the third (threshold-breaching) failure.
+   - The default creation reason is `"3 consecutive failed health checks"`.
+   - **Only one `OPEN` incident** can exist per monitor at any time. Additional consecutive failures are ignored and do not create new incidents.
+
+2. **Incident Resolution**:
+   - An `OPEN` incident is resolved when the monitor recovers and registers **3 consecutive successes** (`CheckStatus.SUCCESS`).
+   - The incident's `resolved_at` is set to the timestamp of the third consecutive success, and its status is updated to `RESOLVED`.
+   - Once resolved, a future outage can trigger a new incident.
+
+3. **Duration Calculation**:
+   - The incident duration in seconds (`duration_seconds`) is computed dynamically:
+     - For `RESOLVED` incidents: `resolved_at - started_at`
+     - For `OPEN` incidents: `now (UTC) - started_at`
+
+### Incident Endpoints
+
+All endpoints require an authenticated session cookie and enforce strict monitor ownership.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/incidents` | List all incidents for all monitors owned by the current user (newest first) |
+| `GET` | `/incidents/{id}` | Get a specific incident by ID (ownership-verified) |
+| `GET` | `/monitors/{id}/incidents` | List all incidents for a specific monitor (ownership-verified) |
+
+**`IncidentResponse` fields:**
+
+| Field | Type | Nullable | Description |
+|---|---|---|---|
+| `id` | int | no | Unique incident ID |
+| `monitor_id` | int | no | Parent monitor ID |
+| `status` | `OPEN` \| `RESOLVED` | no | Current status of the incident |
+| `reason` | string | no | Reason for opening the incident |
+| `started_at` | datetime (UTC) | no | When the incident started (timestamp of the 3rd failure) |
+| `resolved_at` | datetime (UTC) | yes | When the incident was resolved (timestamp of the 3rd success) |
+| `duration_seconds` | int | no | Computed duration of the incident |
+| `created_at` | datetime (UTC) | no | Database creation timestamp |
+| `updated_at` | datetime (UTC) | no | Database update timestamp |
+
+---
+
+## 📊 Dashboard & Analytics (Phase 4)
+
+Provides global, aggregated views over a user's monitors, health checks, and incidents to display the system's operational status at a glance.
+
+### Analytics Calculation Logic
+
+1. **Monitors Status Summary**:
+   - `total_monitors`: All monitors owned by the user.
+   - `down_monitors`: Count of monitors currently holding an `OPEN` incident.
+   - `healthy_monitors`: Count of `is_active` monitors holding no `OPEN` incident.
+2. **Uptime Percentage**:
+   - Evaluates the total number of successful checks out of the total checks over a rolling window (24 hours and 7 days).
+   - Computed both across the entire user account (all monitors combined) and for each individual monitor.
+3. **Response Times**:
+   - Averages the successful network round-trip times per monitor over a rolling 24-hour window.
+   - Selects the latest response time for each monitor.
+
+### Dashboard Endpoints
+
+All endpoints require an authenticated session cookie.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/dashboard/summary` | General totals (total/healthy/down monitors, open/resolved incidents) |
+| `GET` | `/dashboard/uptime` | Rolling 24-hour and 7-day uptime percentages |
+| `GET` | `/dashboard/response-times` | Average and latest response times per monitor (24h window) |
+| `GET` | `/dashboard/recent-incidents` | Latest 10 incidents across all of a user's monitors |
+
+---
+
 ## 🗺️ Architecture Overview
 
 ```text
@@ -323,6 +417,12 @@ Health Check Service   (app/services/health_check_service.py)
     ▼
 HealthCheck Model      (app/models/health_check.py)
     │   persists result
+    ▼
+Incident Service       (app/services/incident_service.py)
+    │   evaluates consecutive results window
+    ▼
+Incident Model         (app/models/incident.py)
+    │   creates/resolves incident
     ▼
 PostgreSQL Database
 ```

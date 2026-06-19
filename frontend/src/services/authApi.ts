@@ -1,5 +1,5 @@
 import { api } from "./api";
-import type { User, LoginCredentials, RegisterCredentials } from "@/types/auth";
+import type { User, LoginCredentials, RegisterCredentials, ForgotPasswordCredentials, ResetPasswordCredentials } from "@/types/auth";
 
 export const authApi = api.injectEndpoints({
   endpoints: (builder) => ({
@@ -35,6 +35,21 @@ export const authApi = api.injectEndpoints({
         method: "POST",
       }),
     }),
+    forgotPassword: builder.mutation<{ message: string }, ForgotPasswordCredentials>({
+      query: (credentials) => ({
+        url: "/v1/auth/forgot-password",
+        method: "POST",
+        body: credentials,
+      }),
+    }),
+    resetPassword: builder.mutation<{ message: string }, ResetPasswordCredentials>({
+      query: (credentials) => ({
+        url: "/v1/auth/reset-password",
+        method: "POST",
+        body: credentials,
+      }),
+      invalidatesTags: ["User"], // Invalidates user tag in case there was a lingering session, to trigger a fetch that will fail
+    }),
   }),
 });
 
@@ -45,4 +60,6 @@ export const {
   useRegisterMutation,
   useLogoutMutation,
   useRefreshMutation,
+  useForgotPasswordMutation,
+  useResetPasswordMutation,
 } = authApi;

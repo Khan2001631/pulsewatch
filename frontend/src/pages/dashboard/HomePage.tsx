@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAppSelector } from "@/hooks/redux";
 import { useLogoutMutation } from "@/services/authApi";
 import {
@@ -8,9 +8,15 @@ import {
   useUpdateMonitorMutation,
   useDeleteMonitorMutation,
 } from "@/services/monitorsApi";
+import { useGetIncidentsQuery } from "@/services/incidentsApi";
 import { MonitorForm } from "@/components/monitors/MonitorForm";
 import { DeleteConfirmModal } from "@/components/monitors/DeleteConfirmModal";
 import { MonitorRow } from "@/components/monitors/MonitorRow";
+import { IncidentsPage } from "@/pages/dashboard/IncidentsPage";
+import { UptimeCard } from "@/components/dashboard/UptimeCard";
+import { ResponseTimeCard } from "@/components/dashboard/ResponseTimeCard";
+import { RecentIncidentsCard } from "@/components/dashboard/RecentIncidentsCard";
+import { useGetSummaryQuery } from "@/services/dashboardApi";
 import type { Monitor } from "@/types/monitor";
 
 const colorMap: Record<string, { bg: string; text: string; border: string; glow: string }> = {
@@ -29,11 +35,24 @@ export function HomePage() {
   const { user } = useAppSelector((state) => state.auth);
   const [logout] = useLogoutMutation();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"Overview" | "Endpoints">("Overview");
+  const [activeTab, setActiveTab] = useState<"Dashboard" | "Endpoints" | "Incidents">(
+    (location.state as any)?.tab || "Dashboard"
+  );
 
   // Fetch real monitors data
   const { data: monitors = [], isLoading: isMonitorsLoading } = useGetMonitorsQuery();
+
+  // Fetch real incidents data
+  const { data: incidents = [] } = useGetIncidentsQuery(undefined, {
+    pollingInterval: 10000, // Sync with backend scheduler tick (10 seconds)
+  });
+
+  // Fetch dashboard summary
+  const { data: summaryData, isLoading: isSummaryLoading } = useGetSummaryQuery(undefined, {
+    pollingInterval: 10000,
+  });
 
   // Mutations
   const [createMonitor, { isLoading: isCreating }] = useCreateMonitorMutation();
@@ -123,15 +142,16 @@ export function HomePage() {
   const userInitial = user?.email?.[0]?.toUpperCase() ?? "U";
 
   // Calculate dynamic stats
-  const totalMonitors = monitors.length;
-  const activeMonitorsCount = monitors.filter((m) => m.is_active).length;
+  const totalMonitors = summaryData?.total_monitors || 0;
+  const activeMonitorsCount = summaryData?.healthy_monitors || 0;
+  const downMonitorsCount = summaryData?.down_monitors || 0;
+  const openIncidentsCount = summaryData?.open_incidents || 0;
 
   const statCards = [
     {
       label: "Total Endpoints",
-      value: totalMonitors.toString(),
+      value: isSummaryLoading ? "..." : totalMonitors.toString(),
       change: "Configured API/URLs",
-      positive: true,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -141,10 +161,9 @@ export function HomePage() {
       color: "blue",
     },
     {
-      label: "Overall Uptime",
-      value: totalMonitors > 0 ? "100%" : "—",
-      change: "No check history yet",
-      positive: true,
+      label: "Healthy Endpoints",
+      value: isSummaryLoading ? "..." : activeMonitorsCount.toString(),
+      change: "Active without issues",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -154,39 +173,37 @@ export function HomePage() {
       color: "emerald",
     },
     {
-      label: "Active Incidents",
-      value: "0",
-      change: "No active incidents",
-      positive: true,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      ),
-      color: "amber",
-    },
-    {
-      label: "Avg Response Time",
-      value: "—",
-      change: "Monitoring inactive",
-      positive: true,
+      label: "Down Endpoints",
+      value: isSummaryLoading ? "..." : downMonitorsCount.toString(),
+      change: downMonitorsCount > 0 ? "Currently experiencing outages" : "All services operational",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
             d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       ),
-      color: "violet",
+      color: downMonitorsCount > 0 ? "red" : "emerald",
+    },
+    {
+      label: "Open Incidents",
+      value: isSummaryLoading ? "..." : openIncidentsCount.toString(),
+      change: openIncidentsCount > 0 ? "Action required" : "No active incidents",
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      ),
+      color: openIncidentsCount > 0 ? "amber" : "emerald",
     },
   ];
 
   const navItems = [
     {
-      label: "Overview",
-      active: activeTab === "Overview",
+      label: "Dashboard",
+      active: activeTab === "Dashboard",
       onClick: () => {
-        setActiveTab("Overview");
+        setActiveTab("Dashboard");
         setSidebarOpen(false);
       },
       icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
@@ -202,21 +219,12 @@ export function HomePage() {
     },
     {
       label: "Incidents",
-      active: false,
-      disabled: true,
-      icon: <svg className="w-4 h-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-    },
-    {
-      label: "Analytics",
-      active: false,
-      disabled: true,
-      icon: <svg className="w-4 h-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-    },
-    {
-      label: "Settings",
-      active: false,
-      disabled: true,
-      icon: <svg className="w-4 h-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+      active: activeTab === "Incidents",
+      onClick: () => {
+        setActiveTab("Incidents");
+        setSidebarOpen(false);
+      },
+      icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
     },
   ];
 
@@ -312,7 +320,7 @@ export function HomePage() {
             <div>
               <h1 className="text-sm font-semibold text-white">{activeTab}</h1>
               <p className="text-xs text-slate-500 hidden sm:block">
-                Dashboard · {activeTab === "Overview" ? "All endpoints" : "Manage monitors"}
+                Dashboard · {activeTab === "Dashboard" ? "All endpoints" : "Manage monitors"}
               </p>
             </div>
           </div>
@@ -364,8 +372,8 @@ export function HomePage() {
             </div>
           </div>
 
-          {activeTab === "Overview" ? (
-            /* ─── Overview Tab ─── */
+          {activeTab === "Dashboard" ? (
+            /* ─── Dashboard Tab ─── */
             <>
               {/* Stats grid */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -395,56 +403,16 @@ export function HomePage() {
                 })}
               </div>
 
-              {/* Endpoints Table inside Overview */}
-              <div className="rounded-2xl border border-white/6 overflow-hidden bg-white/2 backdrop-blur-sm">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Monitored Endpoints</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Live status of your configured URLs</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                    <span className="text-xs text-slate-500">Overview</span>
-                  </div>
-                </div>
-
-                {isMonitorsLoading ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                    <div className="w-6 h-6 border-2 border-slate-600 border-t-blue-500 rounded-full animate-spin mb-3" />
-                    <p className="text-xs">Loading monitors...</p>
-                  </div>
-                ) : monitors.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                    <svg className="w-10 h-10 mb-3 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-sm font-medium text-slate-400">No monitors configured yet</p>
-                    <p className="text-xs text-slate-600 mt-1 mb-4">Add your first HTTP/HTTPS endpoint to get started</p>
-                    <button
-                      onClick={handleOpenCreate}
-                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 hover:text-white transition-all duration-150"
-                    >
-                      Add First Monitor
-                    </button>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-white/4">
-                    {monitors.map((ep) => (
-                      <MonitorRow
-                        key={ep.id}
-                        monitor={ep}
-                        variant="card-row"
-                        onEdit={handleOpenEdit}
-                        onDelete={handleOpenDelete}
-                        onToggleActive={handleToggleActive}
-                      />
-                    ))}
-                  </div>
-                )}
+              {/* Dashboard Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-7">
+                <UptimeCard />
+                <ResponseTimeCard />
+              </div>
+              <div className="mt-5 lg:mt-7">
+                <RecentIncidentsCard />
               </div>
             </>
-          ) : (
+          ) : activeTab === "Endpoints" ? (
             /* ─── Endpoints/Monitors Configuration Tab ─── */
             <div className="rounded-2xl border border-white/6 overflow-hidden bg-white/2 backdrop-blur-sm">
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-[#080d18]/40">
@@ -512,6 +480,9 @@ export function HomePage() {
                 </div>
               )}
             </div>
+          ) : (
+            /* ─── Incidents Tab ─── */
+            <IncidentsPage />
           )}
         </main>
       </div>
